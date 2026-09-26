@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vidhathri Vaidya — dev terminal</title>
+<style>
+  :root{
+    --bg: #0a0b08;
+    --bg-raised: #121309;
+    --amber: #ffb000;
+    --amber-dim: #a86f00;
+    --amber-glow: rgba(255,176,0,0.35);
+    --cyan: #6fd6c9;
+    --text: #e8e0c8;
+    --text-dim: #7a7364;
+    --border: #2b2a1f;
+    font-size: 16px;
+  }
+  *{ box-sizing: border-box; margin:0; padding:0; }
+  html{ scroll-behavior: smooth; }
+  body{
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono','Space Mono',ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
+    line-height: 1.55;
+    min-height: 100vh;
+    position: relative;
+  }
+  /* ambient scanline sweep — the one orchestrated motion this page spends its budget on */
+  body::before{
+    content:"";
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 5;
+    background: repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 3px);
+  }
+  body::after{
+    content:"";
+    position: fixed; left:0; right:0; height: 140px;
+    background: linear-gradient(rgba(255,176,0,0) 0%, rgba(255,176,0,0.05) 50%, rgba(255,176,0,0) 100%);
+    pointer-events: none; z-index: 6;
+    animation: sweep 9s linear infinite;
+  }
+  @keyframes sweep{ 0%{ top: -140px; } 100%{ top: 100vh; } }
+
+  ::selection{ background: var(--amber); color: #0c0d0a; }
+
+  a{ color: var(--cyan); text-decoration: none; border-bottom: 1px dotted var(--cyan); }
+  a:hover{ color: var(--amber); border-color: var(--amber); }
+
+  /* boot overlay */
+  #boot{
+    position: fixed; inset: 0; z-index: 50;
+    background: var(--bg);
+    color: var(--amber);
+    font-size: 0.88rem;
+    padding: 30px;
+    white-space: pre-wrap;
+    overflow: hidden;
+    transition: opacity .5s ease, visibility .5s ease;
+    text-shadow: 0 0 6px var(--amber-glow), 0 0 16px rgba(255,176,0,0.25);
+    transform-origin: center;
+    animation: crt-on .7s cubic-bezier(.2,.9,.3,1), flicker 5s linear 0.9s infinite;
+  }
+  #boot.hide{ opacity: 0; visibility: hidden; }
+  #boot::before{
+    content:"";
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 3px);
+    pointer-events: none;
+    mix-blend-mode: overlay;
+  }
+  #boot .ok{ color: var(--cyan); text-shadow: 0 0 8px rgba(111,214,201,0.5); }
+  #boot-cursor{ display:inline-block; width:8px; height:1em; background:var(--amber); animation: blink 1s steps(1) infinite; vertical-align: text-bottom; box-shadow: 0 0 10px var(--amber-glow); }
+
+  @keyframes crt-on{
+    0%{ transform: scaleY(0.015) scaleX(1.03); opacity: 0.4; filter: brightness(4) saturate(1.6); }
+    12%{ transform: scaleY(1) scaleX(1); opacity: 1; filter: brightness(2.4); }
+    18%{ filter: brightness(0.6); }
+    24%{ filter: brightness(1.8); }
+    32%{ filter: brightness(1); }
+    100%{ transform: scaleY(1) scaleX(1); opacity: 1; filter: brightness(1); }
+  }
+  @keyframes flicker{
+    0%, 100%{ opacity: 1; }
+    92%{ opacity: 1; }
+    93%{ opacity: 0.86; }
+    94%{ opacity: 1; }
+    96.5%{ opacity: 0.92; }
+    97%{ opacity: 1; }
+  }
+
+  .crt-frame{
+    max-width: 1040px;
+    margin: 40px auto;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-raised);
+    box-shadow: 0 0 0 1px rgba(255,176,0,0.05), 0 0 60px -20px rgba(255,176,0,0.08), 0 40px 80px -40px rgba(0,0,0,0.9);
+    overflow: hidden;
+    position: relative;
+    z-index: 1;
+
+    /* CSS Grid: fixed sidebar + fluid content column */
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas:
+      "titlebar titlebar"
+      "sidebar  main"
+      "footer   footer";
+    height: min(78vh, 720px);
+  }
+
+  main{ grid-area: main; padding: 32px 32px 60px; min-width: 0; min-height: 0; overflow-y: auto; scrollbar-color: var(--amber-dim) var(--bg-raised); scrollbar-width: thin; }
+  main::-webkit-scrollbar{ width: 8px; }
+  main::-webkit-scrollbar-track{ background: var(--bg-raised); }
+  main::-webkit-scrollbar-thumb{ background: var(--amber-dim); border-radius: 4px; }
+  main::-webkit-scrollbar-thumb:hover{ background: var(--amber); }
+  .titlebar{
+    grid-area: titlebar;
+    display:flex; align-items:center; gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: #0f100a;
+  }
+  .dot{ width:10px; height:10px; border-radius:50%; }
+  .dot.r{ background:#5c3a2e; } .dot.y{ background:#5c4a2e; } .dot.g{ background:#2e5c3a; }
+  .titlebar span{ margin-left: 10px; color: var(--text-dim); font-size: 0.8rem; }
+  .titlebar .uptime{ margin-left: auto; color: var(--amber-dim); font-size: 0.75rem; }
+
+  aside.sidebar{
+    grid-area: sidebar;
+    border-right: 1px solid var(--border);
+    background: #0e0f08;
+    padding: 20px 0;
+  }
+  nav{
+    /* Flexbox: vertical stack of links */
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 0.85rem;
+    position: relative;
+  }
+  .nav-highlight{
+    position: absolute;
+    left: 0; top: 0;
+    width: 100%; height: 0;
+    background: linear-gradient(90deg, rgba(255,176,0,0.1), rgba(255,176,0,0.02));
+    border-left: 2px solid var(--amber);
+    box-shadow: 0 0 14px -2px var(--amber-glow);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 0;
+    transition: transform .38s cubic-bezier(.22,.85,.25,1), width .38s cubic-bezier(.22,.85,.25,1), height .38s cubic-bezier(.22,.85,.25,1), opacity .25s ease;
+  }
+  nav a{
+    color: var(--text-dim); border: none;
+    padding: 9px 20px;
+    display: block;
+    position: relative;
+    z-index: 1;
+    transition: color .2s ease, letter-spacing .25s ease;
+  }
+  nav a:hover{ color: var(--amber); letter-spacing: 0.4px; }
+  nav a.active{ color: var(--amber); text-shadow: 0 0 8px var(--amber-glow); }
+  nav a::before{ content: "/"; color: var(--border); margin-right: 4px; }
+
+  section{ padding: 40px 0; border-top: 1px solid var(--border); }
+  section:first-of-type{ border-top: none; padding-top: 8px; }
+
+  /* scroll reveal */
+  .reveal{ opacity: 0; transform: translateY(24px); transition: opacity .6s ease, transform .6s ease; }
+  .reveal.in{ opacity: 1; transform: translateY(0); }
+
+  /* animated progress bars */
+  .field .barfill{ width: 0 !important; transition: width 1.1s cubic-bezier(.16,.84,.44,1); }
+  .field.in .barfill{ width: var(--fill, 0%) !important; }
+
+  @media (max-width: 720px){
+    .crt-frame{
+      grid-template-columns: 1fr;
+      grid-template-areas:
+        "titlebar"
+        "sidebar"
+        "main"
+        "footer";
+      height: auto;
+    }
+    main{ overflow-y: visible; }
+    aside.sidebar{ border-right: none; border-bottom: 1px solid var(--border); padding: 6px 0; }
+    nav{ flex-direction: row; flex-wrap: wrap; padding: 0 10px; }
+    nav a{ padding: 8px 10px; }
+    .nav-highlight{ border-left: none; border-bottom: 2px solid var(--amber); border-radius: 3px 3px 0 0; }
+  }
+
+  .ascii{
+    color: var(--amber);
+    font-size: 0.62rem;
+    line-height: 1.05;
+    text-shadow: 0 0 14px var(--amber-glow);
+    margin-bottom: 22px;
+    overflow-x: auto;
+  }
+
+  .prompt{ color: var(--cyan); }
+  .prompt::before{ content: "vidhathri@dev:~$ "; color: var(--amber-dim); }
+
+  h1{
+    font-size: 2.1rem;
+    color: var(--amber);
+    letter-spacing: 0.5px;
+    margin-bottom: 14px;
+    text-shadow: 0 0 18px var(--amber-glow);
+    cursor: default;
+  }
+  h1:hover{ animation: glitch 0.35s steps(2) 1; }
+  @keyframes glitch{
+    0%{ transform: translate(0); }
+    20%{ transform: translate(-2px,1px); text-shadow: 2px 0 var(--cyan), -2px 0 var(--amber); }
+    40%{ transform: translate(2px,-1px); }
+    60%{ transform: translate(-1px,0); text-shadow: 0 0 18px var(--amber-glow); }
+    100%{ transform: translate(0); }
+  }
+
+  h2{
+    font-size: 1.05rem;
+    color: var(--text-dim);
+    margin-bottom: 20px;
+    font-weight: 400;
+  }
+  h2 .prompt{ display:block; margin-bottom: 6px; }
+
+  .cursor{
+    display:inline-block; width: 9px; height: 1.1em;
+    background: var(--amber); vertical-align: text-bottom;
+    animation: blink 1s steps(1) infinite;
+    box-shadow: 0 0 8px var(--amber-glow);
+  }
+  @keyframes blink{ 50%{ opacity: 0; } }
+
+  .tagline{ color: var(--text); max-width: 60ch; margin-top: 10px; }
+  .tagline .hl{ color: var(--cyan); }
+
+  .field{ display:grid; grid-template-columns: 110px 1fr; gap: 4px 12px; max-width: 480px; margin-top: 18px; font-size: 0.92rem;}
+  .field dt{ color: var(--text-dim); }
+  .field dd{ color: var(--text); }
+  .field dd.bar{ display:flex; align-items:center; gap:8px; }
+  .field .barwrap{ flex:1; height: 6px; background: var(--border); border-radius: 3px; overflow:hidden; max-width: 140px; }
+  .field .barfill{ height:100%; background: var(--amber); box-shadow: 0 0 6px var(--amber-glow); }
+
+  .skills-grid{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-top: 10px;
+  }
+  .skill{
+    font-size: 0.9rem; color: var(--text);
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--amber-dim);
+    border-radius: 3px;
+    padding: 10px 12px;
+    background: rgba(255,176,0,0.015);
+    position: relative;
+    overflow: hidden;
+    transition: border-color .2s ease, transform .2s ease, border-radius .35s ease;
+  }
+  .skill::after{
+    content: "";
+    position: absolute; top: 0; left: -75%;
+    width: 45%; height: 100%;
+    background: linear-gradient(115deg, transparent, rgba(255,176,0,0.18), transparent);
+    transform: skewX(-18deg);
+    transition: left .55s ease;
+  }
+  .skill:hover{ border-color: var(--amber); transform: translateY(-3px); border-radius: 10px; }
+  .skill:hover::after{ left: 130%; }
+  .skill .lvl{ color: var(--text-dim); font-size: 0.78rem; display:block; margin-top: 2px; }
+
+  .project{
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+    background: rgba(255,176,0,0.015);
+    transition: border-color .15s ease, box-shadow .15s ease, transform .1s ease-out, border-radius .3s ease;
+    transform-style: preserve-3d;
+    will-change: transform;
+  }
+  .project:hover{ border-color: var(--amber-dim); box-shadow: 0 0 20px -10px var(--amber-glow); border-radius: 12px; }
+  .project h3{ color: var(--amber); font-size: 1.02rem; font-weight: 600; margin-bottom: 6px; }
+  .project .meta{ color: var(--text-dim); font-size: 0.78rem; margin-bottom: 10px; }
+  .project p{ font-size: 0.92rem; }
+  .tags{ margin-top: 12px; display:flex; flex-wrap:wrap; gap: 8px; }
+  .tag{
+    font-size: 0.72rem; color: var(--cyan);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 3px;
+    display: inline-block;
+    transition: background .22s ease, color .22s ease, border-radius .3s ease, transform .22s ease, border-color .22s ease;
+  }
+  .tag:hover{
+    background: var(--cyan);
+    color: var(--bg);
+    border-color: var(--cyan);
+    border-radius: 12px;
+    transform: translateY(-2px);
+  }
+
+  .contact-list{ margin-top: 16px; display:flex; flex-direction:column; gap: 8px; font-size: 0.92rem; }
+  .contact-list a{ color: var(--text); border: none; position: relative; padding-bottom: 1px; }
+  .contact-list a::after{
+    content: "";
+    position: absolute; left: 0; bottom: -2px;
+    width: 0; height: 1px;
+    background: var(--amber);
+    box-shadow: 0 0 6px var(--amber-glow);
+    transition: width .3s cubic-bezier(.2,.8,.2,1);
+  }
+  .contact-list a:hover{ color: var(--amber); }
+  .contact-list a:hover::after{ width: 100%; }
+  .contact-list .k{ color: var(--text-dim); }
+
+  footer{
+    grid-area: footer;
+    border-top: 1px solid var(--border);
+    padding: 18px 24px;
+    color: var(--text-dim);
+    font-size: 0.78rem;
+    display:flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+  }
+
+  @media (max-width: 560px){
+    .crt-frame{ margin: 0; border-radius: 0; }
+    main{ padding: 24px 18px 48px; }
+    .field{ grid-template-columns: 90px 1fr; }
+    .ascii{ font-size: 0.42rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .cursor, h1:hover, body::after{ animation: none; }
+    .reveal{ opacity: 1; transform: none; transition: none; }
+    .field .barfill{ transition: none; }
+    .project{ transition: border-color .15s ease, box-shadow .15s ease; }
+    #boot{ animation: none; }
+    .nav-highlight{ transition: opacity .15s ease; }
+    .skill::after{ display: none; }
+    .skill:hover{ transform: none; }
+    .tag, .contact-list a::after{ transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="boot" aria-hidden="true"></div>
+
+<div class="crt-frame">
+  <div class="titlebar">
+    <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+    <span>Vidhathri Vaidya — /home/vidhathri — 80x24</span>
+    <span class="uptime" id="uptime">uptime 00:00:00</span>
+  </div>
+
+  <aside class="sidebar">
+    <nav>
+      <span class="nav-highlight" id="navHighlight" aria-hidden="true"></span>
+      <a href="#about">about</a>
+      <a href="#skills">skills</a>
+      <a href="#projects">projects</a>
+      <a href="#academics">academics</a>
+      <a href="#activities">activities</a>
+      <a href="#contact">contact</a>
+    </nav>
+  </aside>
+
+  <main>
+    <section id="about" class="reveal">
+      <pre class="ascii">██╗   ██╗██╗   ██╗
+██║   ██║██║   ██║
+██║   ██║██║   ██║
+╚██╗ ██╔╝╚██╗ ██╔╝
+ ╚████╔╝  ╚████╔╝
+  ╚═══╝    ╚═══╝ </pre>
+      <p class="prompt">whoami</p>
+      <h1>Vidhathri Vaidya<span class="cursor"></span></h1>
+      <h2>Information Science student</h2>
+      <p class="tagline">Led team <span class="hl">Agronex</span> as team leader through the Smart India Hackathon (SIH) ideathon. Into systems that connect messy real-world data to something people can actually use.</p>
+
+      <dl class="field">
+        <dt>name</dt><dd>Vidhathri Vaidya</dd>
+        <dt>role</dt><dd>Info Science student</dd>
+        <dt>team led</dt><dd>Agronex — SIH ideathon</dd>
+        <dt>status</dt><dd><span style="color:var(--cyan)">●</span> open to opportunities</dd>
+      </dl>
+    </section>
+
+    <section id="skills" class="reveal">
+      <h2><span class="prompt">ls skills/</span></h2>
+      <div class="skills-grid">
+        <div class="skill">C<span class="lvl">-rwxr-xr-x</span></div>
+        <div class="skill">Python<span class="lvl">-rwxr-xr-x</span></div>
+        <div class="skill">Java<span class="lvl">-rwxr-xr-x</span></div>
+      </div>
+    </section>
+
+    <section id="projects" class="reveal">
+      <h2><span class="prompt">cat projects.log</span></h2>
+
+      <div class="project">
+        <h3>Agronex</h3>
+        <div class="meta">Smart India Hackathon (SIH) · Ideathon · Team Lead</div>
+        <p>Led a team through SIH's ideathon stage, taking an agriculture-focused concept from problem statement to pitch.</p>
+        <div class="tags"><span class="tag">team leadership</span><span class="tag">agritech</span><span class="tag">SIH</span></div>
+      </div>
+
+    </section>
+
+    <section id="academics" class="reveal">
+      <h2><span class="prompt">cat academics.txt</span></h2>
+      <dl class="field bars-target">
+        <dt>10th grade</dt><dd class="bar">98% <span class="barwrap"><span class="barfill" style="--fill:98%"></span></span></dd>
+        <dt>12th grade</dt><dd class="bar">90% <span class="barwrap"><span class="barfill" style="--fill:90%"></span></span></dd>
+        <dt>1st yr CGPA</dt><dd class="bar">8.3 <span class="barwrap"><span class="barfill" style="--fill:83%"></span></span></dd>
+      </dl>
+    </section>
+
+    <section id="activities" class="reveal">
+      <h2><span class="prompt">ls activities/</span></h2>
+      <div class="project">
+        <h3>Singing</h3>
+        <p>Completed Junior level in Hindustani classical vocal exams. Participated in the SA RE GA MA PA audition and made it to the last selection round.</p>
+        <div class="tags"><span class="tag">Hindustani classical</span><span class="tag">SA RE GA MA PA</span></div>
+      </div>
+      <div class="project">
+        <h3>Drawing</h3>
+        <p>Completed the Drawing board exam with distinction.</p>
+        <div class="tags"><span class="tag">distinction</span></div>
+      </div>
+    </section>
+
+    <section id="contact" class="reveal">
+      <h2><span class="prompt">cat contact.txt</span></h2>
+      <div class="contact-list">
+        <div><span class="k">email</span> — <a href="mailto:vsvidhu07@gmail.com">vsvidhu07@gmail.com</a></div>
+        <div><span class="k">github</span> — <a href="https://github.com/vsvaidya07" target="_blank" rel="noopener">github.com/vsvaidya07</a></div>
+        <div><span class="k">linkedin</span> — <a href="https://linkedin.com/in/vidhathri-vaidya" target="_blank" rel="noopener">linkedin.com/in/vidhathri-vaidya</a></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>built by Vidhathri Vaidya</span>
+    <span>process exited 0</span>
+  </footer>
+</div>
+
+<script>
+(function(){
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var boot = document.getElementById('boot');
+
+  // uptime ticker
+  var start = Date.now();
+  var upEl = document.getElementById('uptime');
+  setInterval(function(){
+    var s = Math.floor((Date.now()-start)/1000);
+    var hh = String(Math.floor(s/3600)).padStart(2,'0');
+    var mm = String(Math.floor((s%3600)/60)).padStart(2,'0');
+    var ss = String(s%60).padStart(2,'0');
+    upEl.textContent = 'uptime ' + hh + ':' + mm + ':' + ss;
+  }, 1000);
+
+  if(reduced){
+    boot.style.display = 'none';
+    return;
+  }
+
+  var lines = [
+    "> booting profile.exe",
+    "> loading identity ... " ,
+    "  name: Vidhathri Vaidya  [OK]",
+    "> mounting /skills ...",
+    "  C, Python, Java          [OK]",
+    "> reading academics.txt ...  [OK]",
+    "> reading activities.log ... [OK]",
+    "> initializing Agronex@SIH ...",
+    "  team lead handshake      [OK]",
+    "> starting portfolio session",
+    "",
+    "welcome."
+  ];
+
+  var i = 0, j = 0;
+  var out = "";
+  function typeLine(){
+    if(i >= lines.length){
+      setTimeout(function(){
+        boot.classList.add('hide');
+        setTimeout(function(){ boot.style.display = 'none'; }, 550);
+      }, 350);
+      return;
+    }
+    var line = lines[i];
+    if(j <= line.length){
+      var shown = out + line.slice(0,j);
+      boot.innerHTML = shown.replace(/\[OK\]/g,'<span class="ok">[OK]</span>') + '<span id="boot-cursor"></span>';
+      j++;
+      setTimeout(typeLine, line.length === 0 ? 80 : 14);
+    } else {
+      out += line + "\n";
+      i++; j = 0;
+      setTimeout(typeLine, 120);
+    }
+  }
+  typeLine();
+
+  // allow skipping the boot sequence
+  boot.addEventListener('click', function(){
+    boot.classList.add('hide');
+    setTimeout(function(){ boot.style.display = 'none'; }, 300);
+  });
+
+  // scroll-reveal for sections + academic bar fill
+  var revealEls = document.querySelectorAll('.reveal, .bars-target');
+  if('IntersectionObserver' in window){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(e.isIntersecting){
+          e.target.classList.add('in');
+          io.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.15 });
+    revealEls.forEach(function(el){ io.observe(el); });
+  } else {
+    revealEls.forEach(function(el){ el.classList.add('in'); });
+  }
+
+  // subtle 3D tilt on project cards, mouse-follow
+  if(!reduced && window.matchMedia('(hover: hover)').matches){
+    document.querySelectorAll('.project').forEach(function(card){
+      card.addEventListener('mousemove', function(ev){
+        var r = card.getBoundingClientRect();
+        var x = (ev.clientX - r.left) / r.width - 0.5;
+        var y = (ev.clientY - r.top) / r.height - 0.5;
+        card.style.transform = 'perspective(600px) rotateX(' + (-y*6) + 'deg) rotateY(' + (x*6) + 'deg) translateY(-2px)';
+      });
+      card.addEventListener('mouseleave', function(){
+        card.style.transform = '';
+      });
+    });
+  }
+  // scroll-spy: highlight the sidebar tab matching the visible section
+  var navLinks = document.querySelectorAll('nav a[href^="#"]');
+  var sections = document.querySelectorAll('main section[id]');
+  if('IntersectionObserver' in window && sections.length){
+    var spy = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(e.isIntersecting){
+          navLinks.forEach(function(l){ l.classList.remove('active'); });
+          var match = document.querySelector('nav a[href="#' + e.target.id + '"]');
+          if(match){
+            match.classList.add('active');
+            if(!navEl.matches(':hover')) moveHighlightTo(match);
+          }
+        }
+      });
+    }, { root: window.matchMedia('(max-width: 720px)').matches ? null : document.querySelector('main'), threshold: 0.35 });
+    sections.forEach(function(s){ spy.observe(s); });
+  }
+  // morphing nav highlight — slides & resizes between tabs
+  var navEl = document.querySelector('nav');
+  var highlight = document.getElementById('navHighlight');
+  function moveHighlightTo(el){
+    if(!el || !highlight) return;
+    highlight.style.transform = 'translate(' + el.offsetLeft + 'px,' + el.offsetTop + 'px)';
+    highlight.style.width = el.offsetWidth + 'px';
+    highlight.style.height = el.offsetHeight + 'px';
+    highlight.style.opacity = 1;
+  }
+  function currentActiveLink(){ return document.querySelector('nav a.active') || document.querySelector('nav a'); }
+  navLinks.forEach(function(link){
+    link.addEventListener('mouseenter', function(){ moveHighlightTo(link); });
+  });
+  navEl && navEl.addEventListener('mouseleave', function(){ moveHighlightTo(currentActiveLink()); });
+  window.addEventListener('resize', function(){ moveHighlightTo(currentActiveLink()); });
+  // initial placement once layout settles
+  setTimeout(function(){ moveHighlightTo(currentActiveLink()); }, 50);
+})();
+</script>
+
+</body>
+</html>
